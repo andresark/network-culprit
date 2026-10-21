@@ -60,10 +60,27 @@ struct MainWindow: View {
             .safeAreaInset(edge: .bottom) {
                 ConnectionStatusBar(store: store)
             }
+            .safeAreaInset(edge: .top) {
+                if store.isDemonstration { DemonstrationBanner(store: store) }
+            }
         }
         .alert("Network Culprit", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("OK") { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
+    }
+}
+
+private struct DemonstrationBanner: View {
+    @Bindable var store: DiagnosticStore
+    var body: some View {
+        HStack(spacing: 16) {
+            Label("Demo · Sample data", systemImage: "play.rectangle").font(.callout.weight(.semibold))
+            Text("Offline · real history stays untouched").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Picker("Example", selection: Binding(get: { store.demonstrationScenario }, set: { store.showDemonstration($0) })) {
+                ForEach(DemonstrationScenario.allCases) { Text($0.rawValue).tag($0) }
+            }.frame(width: 200)
+        }.padding(.horizontal, 22).padding(.vertical, 10)
     }
 }
 

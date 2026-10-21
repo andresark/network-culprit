@@ -9,7 +9,9 @@ typealias NativeViewState<Value> = SwiftUI.State<Value>
 @main enum NetworkCulpritLauncher {
     static func main() {
         let arguments = CommandLine.arguments
-        if arguments.contains("--network-notification-status") || arguments.contains("--enable-network-issue-notifications") || arguments.contains("--send-test-network-notification") {
+        if arguments.contains("--demo") || Bundle.main.object(forInfoDictionaryKey: "NetworkCulpritDocumentationDemo") as? Bool == true {
+            NetworkCulpritDemonstrationApp.main()
+        } else if arguments.contains("--network-notification-status") || arguments.contains("--enable-network-issue-notifications") || arguments.contains("--send-test-network-notification") {
             Task { @MainActor in exit(await NetworkIncidentNotifications.runManagementCommand(arguments)) }
             dispatchMain()
         } else if arguments.contains("--login-item-status") || arguments.contains("--enable-launch-at-login") {
@@ -38,6 +40,17 @@ typealias NativeViewState<Value> = SwiftUI.State<Value>
             }
             dispatchMain()
         } else { NetworkCulpritApp.main() }
+    }
+}
+
+struct NetworkCulpritDemonstrationApp: App {
+    @NativeViewState private var store = DiagnosticStore(demonstration: true)
+    var body: some Scene {
+        Window("Network Culprit — Demo", id: "documentation-demo") {
+            MainWindow(store: store).frame(minWidth: 1100, minHeight: 760)
+        }
+        .defaultSize(width: 1240, height: 1020)
+        .restorationBehavior(.disabled)
     }
 }
 

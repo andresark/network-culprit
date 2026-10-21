@@ -8,6 +8,11 @@ on:
   schedule:
     - cron: '23 10 * * *'
   workflow_dispatch:
+    inputs:
+      security_pr:
+        description: 'Dependabot security PR associated with an automatic patch release'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -39,6 +44,7 @@ jobs:
           if [ -f Package.resolved ]; then git ls-files --error-unmatch Package.resolved; fi
           git diff --exit-code -- Package.resolved
           ruby scripts/test-dependency-vulnerability-audit.rb
+          ruby scripts/test-automatic-security-maintenance.rb
           ruby scripts/audit-dependency-vulnerabilities.rb
       - name: Run native Swift tests
         env:
@@ -46,6 +52,7 @@ jobs:
         run: ./scripts/test-native-network-diagnostics.sh
       - name: Build and verify public release bundle
         run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then export NETWORK_CULPRIT_RELEASE_VERSION="${GITHUB_REF_NAME#v}"; fi
           ./scripts/build-native-macos-app.sh
           ./scripts/package-public-release.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -77,7 +84,7 @@ jobs:
 
   publish-release:
     name: Publish verified public release
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v')
     needs: [native-validation, workflow-codeql]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -99,7 +106,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
           GH_REPO: ${{ github.repository }}
+          SECURITY_PR: ${{ inputs.security_pr }}
         run: |
           cd release-assets
           sha256sum --check SHA256SUMS.txt
-          gh release create "$RELEASE_TAG" ./*.zip SHA256SUMS.txt --verify-tag --title "Network Culprit $RELEASE_TAG" --notes-file "../docs/releases/$RELEASE_TAG.md"
+          if [[ -f "../docs/releases/$RELEASE_TAG.md" ]]; then
+            gh release create "$RELEASE_TAG" ./*.zip SHA256SUMS.txt --verify-tag --title "Network Culprit $RELEASE_TAG" --notes-file "../docs/releases/$RELEASE_TAG.md"
+          else
+            [[ "$SECURITY_PR" =~ ^[1-9][0-9]*$ ]]
+            printf 'Automatic app security update for Dependabot PR #%s. Native tests, dependency auditing, and bundle verification passed. Requires macOS 27 and Apple Silicon. Ad hoc signed; not Apple notarized.\n' "$SECURITY_PR" > security-release-notes.md
+            gh release create "$RELEASE_TAG" ./*.zip SHA256SUMS.txt --verify-tag --title "Network Culprit $RELEASE_TAG" --notes-file security-release-notes.md --generate-notes
+          fi

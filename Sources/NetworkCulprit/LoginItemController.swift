@@ -6,13 +6,15 @@ import ServiceManagement
 @MainActor @Observable final class LoginItemController {
     private(set) var status: SMAppService.Status = .notRegistered
     private(set) var errorMessage: String?
+    private let isDemonstration: Bool
 
-    init() { refresh() }
+    init(demonstration: Bool = false) { isDemonstration = demonstration; refresh() }
 
     var isRequested: Bool { status == .enabled || status == .requiresApproval }
     var needsApproval: Bool { status == .requiresApproval }
     var description: String {
-        switch status {
+        if isDemonstration { return "Demo mode — login registration is disabled" }
+        return switch status {
         case .enabled: "Enabled — starts quietly in the menu bar at login"
         case .requiresApproval: "Waiting for approval in macOS Login Items"
         case .notRegistered: "Off — open the app manually to start monitoring"
@@ -21,9 +23,10 @@ import ServiceManagement
         }
     }
 
-    func refresh() { status = SMAppService.mainApp.status }
+    func refresh() { if !isDemonstration { status = SMAppService.mainApp.status } }
 
     func setEnabled(_ enabled: Bool) {
+        guard !isDemonstration else { return }
         errorMessage = nil
         refresh()
         do {
@@ -36,5 +39,5 @@ import ServiceManagement
         refresh()
     }
 
-    func openSystemSettings() { SMAppService.openSystemSettingsLoginItems() }
+    func openSystemSettings() { if !isDemonstration { SMAppService.openSystemSettingsLoginItems() } }
 }

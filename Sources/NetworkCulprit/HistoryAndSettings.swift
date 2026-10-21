@@ -187,7 +187,7 @@ struct SettingsScreen: View {
                 Text("Free and MIT licensed. No telemetry, account, AI service, or cloud storage. Diagnostic requests go to the providers and peers being tested. This app never changes network settings.")
                     .font(.caption).foregroundStyle(.secondary)
             } header: { Text("Privacy & source") }
-        }.formStyle(.grouped)
+        }.formStyle(.grouped).disabled(store.isDemonstration)
         .onAppear { store.loginItem.refresh(); Task { await store.incidentNotifications.refreshAuthorization() } }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { store.loginItem.refresh(); Task { await store.incidentNotifications.refreshAuthorization() } }

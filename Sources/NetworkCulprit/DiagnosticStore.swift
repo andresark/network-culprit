@@ -14,22 +14,35 @@ import AppKit
     var pathIsExpensive = false
     var pathIsConstrained = false
     var displayLimit = 1000
+    let isDemonstration: Bool
+    var demonstrationScenario = DemonstrationScenario.dnsIssue
     var settings: DiagnosticSettings {
         didSet {
+            guard !isDemonstration else { return }
             if let data = try? JSONEncoder().encode(settings) { UserDefaults.standard.set(data, forKey: "networkDiagnosticSettings") }
             configureSampling()
         }
     }
     let database: SnapshotDatabase?
     let dataDirectory: URL
-    let loginItem = LoginItemController()
+    let loginItem: LoginItemController
     let incidentNotifications: NetworkIncidentNotifications
     private var samplingTask: Task<Void, Never>?
     private var incidentConfirmationTask: Task<Void, Never>?
     private let pathMonitor = NWPathMonitor()
     var latest: DiagnosticSnapshot? { history.first }
 
-    init() {
+    init(demonstration: Bool = false) {
+        isDemonstration = demonstration
+        loginItem = LoginItemController(demonstration: demonstration)
+        if demonstration {
+            settings = DiagnosticSettings()
+            dataDirectory = URL(fileURLWithPath: "/Sample Data/Network Culprit", isDirectory: true)
+            database = nil
+            incidentNotifications = NetworkIncidentNotifications(dataDirectory: dataDirectory, demonstration: true)
+            showDemonstration(.dnsIssue)
+            return
+        }
         if let data = UserDefaults.standard.data(forKey: "networkDiagnosticSettings"), let saved = try? JSONDecoder().decode(DiagnosticSettings.self, from: data) { settings = saved }
         else { settings = DiagnosticSettings() }
         dataDirectory = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/Network Culprit — ISP DNS and VPN Diagnostics", directoryHint: .isDirectory)
@@ -60,7 +73,7 @@ import AppKit
     func configureSampling() {
         samplingTask?.cancel()
         incidentConfirmationTask?.cancel()
-        guard settings.automaticChecks else { return }
+        guard !isDemonstration, settings.automaticChecks else { return }
         samplingTask = Task { [weak self] in
             while !Task.isCancelled {
                 let seconds = max(self?.settings.intervalSeconds ?? 300, 60)
@@ -86,7 +99,7 @@ import AppKit
     }
 
     func run(speedTest: Bool = false) {
-        guard !isRunning, database != nil else { return }
+        guard !isDemonstration, !isRunning, database != nil else { return }
         isRunning = true
         activity = speedTest ? "Measuring bandwidth, loaded latency, and every network layer…" : "Comparing router, internet, DNS, Tailscale, IPv6, and HTTPS…"
         let settings = settings
@@ -121,6 +134,15 @@ import AppKit
             totalRecords = try database.count()
             lastCheck = history.first?.date
         } catch { errorMessage = "Could not read saved history: \(error.localizedDescription)" }
+    }
+
+    func showDemonstration(_ scenario: DemonstrationScenario) {
+        guard isDemonstration else { return }
+        demonstrationScenario = scenario
+        history = DemonstrationData.history(scenario: scenario)
+        totalRecords = history.count
+        lastCheck = history.first?.date
+        pathDescription = "Sample connection · Ethernet · no live network requests"
     }
 
     func loadMoreHistory() { displayLimit += 1000; reloadHistory() }
