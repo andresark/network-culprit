@@ -41,6 +41,8 @@ jobs:
           ruby scripts/test-dependency-vulnerability-audit.rb
           ruby scripts/audit-dependency-vulnerabilities.rb
       - name: Run native Swift tests
+        env:
+          LIBDISPATCH_COOPERATIVE_POOL_STRICT: '1'
         run: ./scripts/test-native-network-diagnostics.sh
       - name: Build and verify public release bundle
         run: |

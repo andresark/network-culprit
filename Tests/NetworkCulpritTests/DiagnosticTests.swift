@@ -140,6 +140,22 @@ private func snapshot(date: Date = Date()) -> DiagnosticSnapshot {
     #expect(result.text == json)
     #expect(try JSONSerialization.jsonObject(with: Data(result.text.utf8)) is [String: Any])
 }
+@Test func concurrentCommandsAlwaysDrainBothOutputStreams() async {
+    await withTaskGroup(of: (Int, CommandResult).self) { group in
+        for index in 0..<16 {
+            group.addTask {
+                let result = await SystemCommand.run("/bin/sh", ["-c", "printf 'stdout-\(index)'; printf 'stderr-\(index)' >&2"], timeout: 5)
+                return (index, result)
+            }
+        }
+        for await (index, result) in group {
+            #expect(result.exitCode == 0)
+            #expect(!result.timedOut)
+            #expect(result.standardOutput == "stdout-\(index)")
+            #expect(result.standardError == "stderr-\(index)")
+        }
+    }
+}
 @Test func diagnosticJSONIsNotCorruptedByStandardError() async throws {
     let result = await SystemCommand.run("/bin/sh", ["-c", "printf '{\"UDP\":true}'; printf 'diagnostic warning' >&2"])
     #expect(result.standardOutput == "{\"UDP\":true}")

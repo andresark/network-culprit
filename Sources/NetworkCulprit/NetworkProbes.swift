@@ -20,7 +20,14 @@ private final class OutputBuffer: @unchecked Sendable {
 
 enum SystemCommand {
     static func run(_ path: String, _ arguments: [String], timeout: Double = 8, environmentOverrides: [String: String] = [:]) async -> CommandResult {
-        await Task.detached(priority: .utility) { execute(path, arguments, timeout: timeout, environmentOverrides: environmentOverrides) }.value
+        // Process execution blocks on termination and pipe draining. Keep that
+        // work off Swift's cooperative executor: on a small-core Mac, blocking
+        // detached tasks can starve the dispatch readers that supply output.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                continuation.resume(returning: execute(path, arguments, timeout: timeout, environmentOverrides: environmentOverrides))
+            }
+        }
     }
     private static func execute(_ path: String, _ arguments: [String], timeout: Double, environmentOverrides: [String: String]) -> CommandResult {
         let start = Date()
