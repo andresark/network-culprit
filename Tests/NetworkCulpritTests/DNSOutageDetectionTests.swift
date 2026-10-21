@@ -78,16 +78,31 @@ private func dnsSnapshot(_ probes: [Probe]) -> DiagnosticSnapshot {
 }
 
 @Test func nativeNegativeDNSAnswerVerifiesResponseButCacheDoesNot() {
-    let negative = FreshSystemDNS.response(error: DNSServiceErrorType(kDNSServiceErr_NoSuchRecord), cached: false, milliseconds: 10, name: "unique.example.com")
+    let negative = FreshSystemDNS.response(error: DNSServiceErrorType(kDNSServiceErr_NoSuchRecord), cached: false, milliseconds: 10, domain: "example.com", name: "unique.example.com")
     #expect(negative.health == .good)
     #expect(negative.detail.contains("expected for a random name"))
-    let cached = FreshSystemDNS.response(error: 0, cached: true, milliseconds: 1, name: "unique.example.com")
+    let cached = FreshSystemDNS.response(error: 0, cached: true, milliseconds: 1, domain: "example.com", name: "unique.example.com")
     #expect(cached.health == .warning)
     #expect(cached.detail.contains("live DNS was not verified"))
-    let timeout = FreshSystemDNS.response(error: DNSServiceErrorType(kDNSServiceErr_Timeout), cached: false, milliseconds: 6000, name: "unique.example.com")
+    let timeout = FreshSystemDNS.response(error: DNSServiceErrorType(kDNSServiceErr_Timeout), cached: false, milliseconds: 6000, domain: "example.com", name: "unique.example.com")
     #expect(timeout.health == .failed)
     #expect(timeout.milliseconds == nil)
-    let denied = FreshSystemDNS.response(error: DNSServiceErrorType(kDNSServiceErr_PolicyDenied), cached: false, milliseconds: 1, name: "unique.example.com")
+    let denied = FreshSystemDNS.response(error: DNSServiceErrorType(kDNSServiceErr_PolicyDenied), cached: false, milliseconds: 1, domain: "example.com", name: "unique.example.com")
     #expect(!denied.detail.contains("6 seconds"))
     #expect(dnsSnapshot([denied]).finding.layer == .local)
+}
+
+@Test func uniqueFreshQueriesKeepOneStableHistorySeriesAndDetailedEvidence() {
+    let first = FreshSystemDNS.response(error: 0, cached: false, milliseconds: 10, domain: "example.com", name: "first.example.com")
+    let second = FreshSystemDNS.response(error: 0, cached: false, milliseconds: 12, domain: "example.com", name: "second.example.com")
+    #expect(first.target == "example.com")
+    #expect(first.target == second.target)
+    #expect(first.name == second.name)
+    #expect(first.evidence.contains("first.example.com"))
+    #expect(second.evidence.contains("second.example.com"))
+    var older = first; older.target = "network-culprit-older.example.com"
+    #expect(older.historySeriesName == first.historySeriesName)
+    #expect(first.historySeriesName == second.historySeriesName)
+    var router = first; router.key = "dns.router.192.0.2.1"; router.target = "192.0.2.1"
+    #expect(router.historySeriesName.contains("192.0.2.1"))
 }
