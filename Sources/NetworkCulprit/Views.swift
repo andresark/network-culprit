@@ -143,7 +143,7 @@ struct OverviewScreen: View {
             }.padding(24)
         }
         .sheet(item: $selectedLayer) { layer in
-            if let snapshot = store.latest { LayerDetailSheet(layer: layer, snapshot: snapshot) }
+            LiveLayerDetailSheet(layer: layer, store: store)
         }
     }
 }
@@ -193,8 +193,8 @@ struct LayerCard: View {
         let health = snapshot.layerHealth(layer)
         VStack(alignment: .leading, spacing: 12) {
             HStack { Label(layer.rawValue, systemImage: layer.symbol).font(.headline); Spacer(); Image(systemName: health.symbol).foregroundStyle(health.color) }
-            Text(primary?.metric ?? "Not measured").font(.system(.title2, design: .rounded, weight: .semibold)).monospacedDigit()
-            Text(primary?.detail ?? "Run a diagnostic to measure this layer.")
+            Text(layer == .dns ? snapshot.dnsAssessment.title : primary?.metric ?? "Not measured").font(.system(.title2, design: .rounded, weight: .semibold)).monospacedDigit()
+            Text(layer == .dns ? snapshot.dnsAssessment.detail : primary?.detail ?? "Run a diagnostic to measure this layer.")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(2).frame(height: 34, alignment: .topLeading)
             HStack { Text("\(snapshot.probes(for: layer).filter { $0.health == .good }.count)/\(snapshot.probes(for: layer).count) checks passed"); Spacer(); Image(systemName: "chevron.right") }
                 .font(.caption2).foregroundStyle(.secondary)
@@ -272,17 +272,63 @@ struct LatencyHistoryChart: View {
     }
 }
 
+// Observe the store inside the presented view so an open sheet follows new
+// samples. History detail sheets intentionally keep their selected snapshot.
+struct LiveLayerDetailSheet: View {
+    var layer: NetworkLayer
+    @Bindable var store: DiagnosticStore
+    var body: some View {
+        Group {
+            if let snapshot = store.latest {
+                LayerDetailSheet(layer: layer, snapshot: snapshot, isRunning: store.isRunning,
+                                 refresh: store.isDemonstration ? nil : { store.run() })
+            }
+        }
+        .task { store.run() }
+    }
+}
+
 struct LayerDetailSheet: View {
     var layer: NetworkLayer
     var snapshot: DiagnosticSnapshot
+    var isRunning = false
+    var refresh: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+    private var orderedProbes: [Probe] {
+        func priority(_ health: Health) -> Int {
+            switch health { case .failed: 0; case .warning: 1; case .good: 2; case .unavailable: 3 }
+        }
+        return snapshot.probes(for: layer).sorted {
+            if priority($0.health) != priority($1.health) { return priority($0.health) < priority($1.health) }
+            return ($0.name, $0.target) < ($1.name, $1.target)
+        }
+    }
     var body: some View {
         VStack(spacing: 0) {
-            HStack { Label(layer.rawValue, systemImage: layer.symbol).font(.title2.weight(.semibold)); Spacer(); Button("Done") { dismiss() }.buttonStyle(.glass).keyboardShortcut(.defaultAction) }.padding(20)
+            HStack {
+                Label(layer.rawValue, systemImage: layer.symbol).font(.title2.weight(.semibold))
+                Spacer()
+                if let refresh {
+                    Button(action: refresh) { Label(isRunning ? "Checking…" : "Check Again", systemImage: "arrow.clockwise") }
+                        .buttonStyle(.glassProminent).disabled(isRunning)
+                }
+                Button("Done") { dismiss() }.buttonStyle(.glass).keyboardShortcut(.defaultAction)
+            }.padding(20)
             Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    StatusPill(health: snapshot.layerHealth(layer))
+                    if layer == .dns { Text(snapshot.dnsAssessment.title).font(.headline) }
+                    Spacer()
+                    if isRunning { ProgressView().controlSize(.small) }
+                }
+                if layer == .dns { Text(snapshot.dnsAssessment.detail).font(.callout).foregroundStyle(.secondary) }
+                Text("\(isRunning ? "Checking now · previous result" : "Measured"): \(snapshot.date.formatted(date: .abbreviated, time: .standard))")
+                    .font(.caption).foregroundStyle(.secondary)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.vertical, 12)
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    ForEach(snapshot.probes(for: layer)) { probe in
+                    ForEach(orderedProbes) { probe in
                         GroupBox {
                             VStack(alignment: .leading, spacing: 9) {
                                 HStack { Text(probe.name).font(.headline); Spacer(); StatusPill(health: probe.health); Text(probe.metric).monospacedDigit().bold() }

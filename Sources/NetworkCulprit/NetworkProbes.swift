@@ -79,6 +79,12 @@ enum TailscaleCLI {
 struct DNSReply: Sendable { var milliseconds: Double; var code: Int; var answers: Int; var error: String? }
 
 enum DNSWire {
+    static func health(_ results: [DNSReply]) -> Health {
+        let successful = results.filter { $0.error == nil && $0.code == 0 && $0.answers > 0 }
+        guard !successful.isEmpty else { return .failed }
+        let median = successful.map(\.milliseconds).sorted()[successful.count / 2]
+        return successful.count == results.count && median <= 250 ? .good : .warning
+    }
     static func query(_ domain: String, id: UInt16) -> Data? {
         let domain = domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
         guard domain.utf8.count <= 253, domain.range(of: "^[A-Za-z0-9.-]+$", options: .regularExpression) != nil else { return nil }

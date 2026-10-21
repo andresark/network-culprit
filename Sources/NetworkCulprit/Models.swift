@@ -85,11 +85,46 @@ struct DiagnosticSnapshot: Codable, Identifiable, Sendable {
     func probes(for layer: NetworkLayer) -> [Probe] { probes.filter { $0.layer == layer } }
     func layerHealth(_ layer: NetworkLayer) -> Health {
         if finding.layer == layer && finding.health != .good { return finding.health }
+        if layer == .dns { return dnsAssessment.health }
         let measured = probes(for: layer).filter { $0.health != .unavailable }
         if measured.isEmpty { return .unavailable }
         if measured.allSatisfy({ $0.health == .good }) { return .good }
         // A failed single endpoint does not establish that an entire layer failed.
         return .warning
+    }
+}
+
+struct DNSAssessment {
+    var health: Health
+    var title: String
+    var detail: String
+    var evidence: [Probe]
+}
+
+extension DiagnosticSnapshot {
+    var dnsAssessment: DNSAssessment { DNSAssessment.evaluate(probes) }
+}
+
+extension DNSAssessment {
+    static func evaluate(_ probes: [Probe]) -> DNSAssessment {
+        let dns = probes.filter { $0.layer == .dns }
+        let failures = dns.filter { $0.health == .failed }
+        let concerns = dns.filter { $0.health == .failed || $0.health == .warning }
+        let systemFailed = dns.contains { ($0.key == "dns.system" || $0.key == "dns.system.fresh") && $0.health == .failed }
+        if systemFailed {
+            return DNSAssessment(health: .failed, title: "System DNS is failing",
+                                 detail: "The Mac's system resolver did not complete a lookup. Cached or alternative DNS paths may still answer.", evidence: concerns)
+        }
+        if !concerns.isEmpty {
+            let freshWorks = dns.contains { $0.key == "dns.system.fresh" && $0.health == .good }
+            return DNSAssessment(health: .warning,
+                                 title: failures.isEmpty ? "DNS needs attention" : "\(failures.count) DNS check\(failures.count == 1 ? "" : "s") failed",
+                                 detail: "\(freshWorks ? "Fresh system DNS answered" : "Some lookups answered, potentially from cache"), but individual resolver paths need attention. Open the evidence to compare them.", evidence: concerns)
+        }
+        let measured = dns.filter { $0.health != .unavailable }
+        return DNSAssessment(health: measured.isEmpty ? .unavailable : .good,
+                             title: measured.isEmpty ? "DNS not measured" : "DNS checks passed",
+                             detail: dns.contains { $0.key == "dns.system.fresh" && $0.health == .good } ? "A unique system query and the measured resolver paths answered." : "Saved resolver checks passed. A cached hostname lookup alone does not verify live DNS.", evidence: [])
     }
 }
 
@@ -132,7 +167,7 @@ enum Attribution {
             return finding("Local network access may be blocked", "A diagnostic was denied by system policy. A permission failure should be resolved before blaming a router or DNS provider.", .local, "Medium",
                            ["A probe returned a permission or policy denial."], "Check System Settings → Privacy & Security → Local Network for Network Culprit.", health: .warning)
         }
-        let systemDNSFailed = named("dns.system")?.health == .failed
+        let systemDNSFailed = named("dns.system")?.health == .failed || named("dns.system.fresh")?.health == .failed
         let controlWorks = successful("dns.control")
         if systemDNSFailed && (directWorks || controlWorks) {
             if failed("dns.nextdns.") && controlWorks {
@@ -149,6 +184,15 @@ enum Attribution {
             }
             return finding("DNS resolution is failing", "Direct connectivity works, but the Mac's normal hostname lookup does not.", .dns, "High",
                            ["Direct connectivity or independent DNS works.", "The system resolver timed out or returned no address."], "Compare the configured, router, NextDNS, and Tailscale resolver rows below.")
+        }
+        let resolverFailures = probes.filter {
+            $0.layer == .dns && $0.health == .failed &&
+            ["dns.router.", "dns.nextdns.", "dns.configured.", "dns.tailscale."].contains(where: $0.key.hasPrefix)
+        }
+        if directWorks && !resolverFailures.isEmpty {
+            return finding("Some DNS resolver paths are failing", "The internet is reachable and some system or alternative DNS lookups may work, but direct queries to \(resolverFailures.count) resolver path\(resolverFailures.count == 1 ? "" : "s") failed. Cached results or encrypted/VPN DNS can conceal these failures.", .dns, "Measured",
+                           resolverFailures.map { "\($0.name): \($0.detail)" },
+                           "Open DNS / NextDNS and compare the fresh system query with the failing resolver rows. Direct UDP failures alone do not establish a NextDNS service outage.", health: .warning)
         }
         if !directWorks && failed("internet.https") && !successful("internet.ping") && named("local.router")?.packetLoss == 100 {
             return finding("Local gateway path is unreachable", "The router and independent internet destinations do not answer. A local router, cable, adapter, or access-point problem is more likely than a DNS-only fault.", .local, "Medium",
