@@ -3,6 +3,7 @@
 require 'json'
 require 'net/http'
 require 'uri'
+require 'yaml'
 
 module DependencyVulnerabilityAudit
   def self.swift_queries(manifest, lock)
@@ -44,13 +45,28 @@ module DependencyVulnerabilityAudit
 
   def self.action_queries(contents)
     contents.flat_map do |content|
-      content.lines.map do |line|
+      # Compare parsed YAML with canonical references so quoted/alternate YAML
+      # key syntax cannot silently omit an action from vulnerability checking.
+      referenced = []
+      visit = lambda do |value|
+        if value.is_a?(Hash)
+          value.each { |key, child| key == 'uses' ? referenced << child : visit.call(child) }
+        elsif value.is_a?(Array)
+          value.each { |child| visit.call(child) }
+        end
+      end
+      visit.call(YAML.safe_load(content))
+      audited = []
+      queries = content.lines.map do |line|
         next unless line.match?(/^\s*(?:-\s*)?uses:/)
         match = line.match(/^\s*(?:-\s*)?uses:\s*([\w.-]+\/[\w.\/-]+)@([0-9a-f]{40})\s+#\s+v(\d+\.\d+\.\d+)\s*$/)
         raise 'Every action must use a full SHA and exact release comment (# vX.Y.Z)' unless match
+        audited << "#{match[1]}@#{match[2]}"
         name = match[1].split('/').first(2).join('/')
         [{ 'commit' => match[2] }, { 'package' => { 'ecosystem' => 'GitHub Actions', 'name' => name }, 'version' => match[3] }]
       end.compact.flatten(1)
+      raise 'An action uses unsupported YAML syntax and was not audited' unless referenced.sort == audited.sort
+      queries
     end.uniq
   end
 
