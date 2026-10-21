@@ -27,7 +27,7 @@ The privileged maintenance workflow runs only after successful pull-request vali
 
 SwiftPM fixes produce a new semantic patch tag on the actual squash-merge commit, then explicitly dispatch the full release workflow. This avoids GitHub's suppression of push workflows for tags created with `GITHUB_TOKEN`; no long-lived PAT is stored. The tag version is embedded in the built bundle. CI-only action fixes merge without an app release. Retries reuse an existing release tag and do not duplicate a published release.
 
-Only the maintenance job receives PR/content/action write permissions. Only the publication job writes releases. Release-tag creation permits the repository owner and GitHub Actions; tag updates and deletion remain owner-only. Build and test jobs retain read-only access. Failed or indeterminate checks, identity mismatches, unsupported changes, API failures, and remaining advisories stop automation for investigation.
+Only the maintenance job receives PR/content/action write permissions. Only the publication job writes releases. Authorized repository writers, including GitHub Actions jobs with content-write permission, can create release tags; existing tag updates and deletion remain owner-only. Build and test jobs retain read-only access. Failed or indeterminate checks, identity mismatches, unsupported changes, API failures, and remaining advisories stop automation for investigation.
 
 The maintenance workflow's manual **Run workflow** entry accepts a completed PR validation run ID and always performs a dry run. It never merges a PR or creates a release, even for a qualifying security fix.
 

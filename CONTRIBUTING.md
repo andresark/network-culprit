@@ -46,7 +46,7 @@ Commit `Package.resolved` when adding remote packages. All direct and transitive
 
 Verified Dependabot security fixes follow [the automatic maintenance policy](SECURITY.md#automatic-merge-and-release-policy). SwiftPM changes create the next patch tag on the merge commit and dispatch the same release gates; CI-only fixes do not publish binaries. No version-bump commit or stored PAT is needed. Normal version updates and other contributions still require manual merging. When merging with `gh`, use `--author-email 22714509+andresark@users.noreply.github.com` for this maintainer's commit identity.
 
-Use the release's workflow run to inspect its provenance. The release job checks that the tagged commit belongs to main. It does not overwrite an existing release. Tag creation permits the owner and GitHub Actions; updating/deleting existing tags remains owner-only. Do not upload a development bundle or a ZIP containing local history. Publishing an ad hoc signed build does not provide notarization.
+Use the release's workflow run to inspect its provenance. The release job checks that the tagged commit belongs to main. It does not overwrite an existing release. Authorized repository writers and content-write GitHub Actions jobs can create tags; updating/deleting existing tags remains owner-only. Do not upload a development bundle or a ZIP containing local history. Publishing an ad hoc signed build does not provide notarization.
 
 ## Documentation screenshots
 

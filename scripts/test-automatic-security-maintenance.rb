@@ -115,14 +115,14 @@ class AutomaticSecurityMaintenanceTest < Minitest::Test
   end
 
   def test_application_security_fix_merges_exact_head_then_requests_release
-    fake = client('Package.resolved' => [lock('1.0.0', BASE), lock('1.0.1', HEAD)])
+    fake = client({ 'Package.resolved' => [lock('1.0.0', BASE), lock('1.0.1', HEAD)] })
     fake.process(9, HEAD)
     assert_equal HEAD, fake.writes.first[:sha]
     assert_equal [[9, MERGE, ['GHSA-SYNTHETIC-TEST']]], fake.releases
   end
 
   def test_ci_fix_never_requests_an_app_release
-    fake = client('.github/workflows/check.yml' => [workflow('1.0.0', BASE), workflow('1.0.1')])
+    fake = client({ '.github/workflows/check.yml' => [workflow('1.0.0', BASE), workflow('1.0.1')] })
     fake.process(9, HEAD)
     assert_equal 1, fake.writes.length
     assert_empty fake.releases
