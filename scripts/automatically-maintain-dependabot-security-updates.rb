@@ -238,7 +238,7 @@ end
 if $PROGRAM_NAME == __FILE__
   begin
     raise 'Unexpected repository' unless ENV.fetch('GITHUB_REPOSITORY') == AutomaticSecurityMaintenance::REPOSITORY
-    AutomaticSecurityMaintenance::Client.new.run(JSON.parse(File.read(ENV.fetch('GITHUB_EVENT_PATH'))))
+    AutomaticSecurityMaintenance::Client.new(dry_run: ENV['GITHUB_EVENT_NAME'] == 'workflow_dispatch').run(JSON.parse(File.read(ENV.fetch('GITHUB_EVENT_PATH'))))
   rescue StandardError => error
     warn "Automatic security maintenance stopped: #{error.message}"
     exit 1
