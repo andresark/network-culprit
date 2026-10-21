@@ -3,6 +3,8 @@ on:
   workflow_run:
     workflows: ['Native macOS tests, dependency audit, and release']
     types: [completed]
+  schedule:
+    - cron: '17 * * * *'
   workflow_dispatch:
     inputs:
       validation_run_id:
@@ -12,7 +14,7 @@ permissions:
   contents: read
 jobs:
   merge-security-fix-and-release-app-patch:
-    if: github.repository == 'andresark/network-culprit' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'))
+    if: github.repository == 'andresark/network-culprit' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

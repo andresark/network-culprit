@@ -202,6 +202,20 @@ module AutomaticSecurityMaintenance
     end
 
     def run(event)
+      if !event['workflow_run'] && !event['inputs']
+        # Reconcile open bot PRs after transient API errors, late checks, or
+        # delayed advisory ingestion. A successful exact-head validation is
+        # still mandatory; the schedule never authorizes unchecked heads.
+        pages('pulls?state=open&base=main').each do |pr|
+          next unless pr.dig('user', 'login') == 'dependabot[bot]'
+          sha = pr.dig('head', 'sha')
+          raise 'Invalid scheduled PR head' unless sha.to_s.match?(/\A[0-9a-f]{40}\z/)
+          runs = api("actions/workflows/validate-and-release.yml/runs?event=pull_request&head_sha=#{sha}&status=success&per_page=100").fetch('workflow_runs')
+          next unless runs.any? { |run| run['head_sha'] == sha && run['conclusion'] == 'success' && run['path'] == '.github/workflows/validate-and-release.yml' }
+          process(pr.fetch('number'), sha)
+        end
+        return
+      end
       workflow = if event['workflow_run']
                    event.fetch('workflow_run')
                  else

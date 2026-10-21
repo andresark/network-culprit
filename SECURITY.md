@@ -31,6 +31,8 @@ Only the maintenance job receives PR/content/action write permissions. Only the 
 
 The maintenance workflow's manual **Run workflow** entry accepts a completed PR validation run ID and always performs a dry run. It never merges a PR or creates a release, even for a qualifying security fix.
 
+An hourly reconciliation rechecks open Dependabot PRs that already have successful validation on their current head. This retries late checks, delayed advisory data, and transient service failures without approving untested commits. GitHub may delay schedules. A failed release job can be rerun; existing tags/releases are reused rather than replaced.
+
 ## Coverage boundaries
 
 The app currently has **no external Swift package dependencies**. SwiftUI, Network.framework, Foundation, Swift Charts, system SQLite, the Swift runtime, and documented command-line tools come from macOS. Their CVEs are fixed through Apple software updates, not by Dependabot. Keep the operating system and build toolchain current. Tailscale is optional and independently installed; update it through its own vendor channel.

@@ -176,4 +176,29 @@ class AutomaticSecurityMaintenanceTest < Minitest::Test
     fake.release_security_fix(9, MERGE, ['GHSA-SYNTHETIC-TEST'])
     assert_empty fake.writes
   end
+
+  class FakeReconciliationClient < Policy::Client
+    attr_reader :processed
+    def initialize(validated:)
+      super()
+      @validated, @processed = validated, []
+    end
+    def pages(_path)
+      [{ 'number' => 9, 'user' => { 'login' => 'dependabot[bot]' }, 'head' => { 'sha' => HEAD } },
+       { 'number' => 10, 'user' => { 'login' => 'human' }, 'head' => { 'sha' => BASE } }]
+    end
+    def api(_path, **_options)
+      { 'workflow_runs' => @validated ? [{ 'head_sha' => HEAD, 'conclusion' => 'success', 'path' => '.github/workflows/validate-and-release.yml' }] : [] }
+    end
+    def process(*arguments); @processed << arguments; end
+  end
+
+  def test_hourly_reconciliation_requires_exact_head_validation_and_skips_humans
+    unchecked = FakeReconciliationClient.new(validated: false)
+    unchecked.run({})
+    assert_empty unchecked.processed
+    checked = FakeReconciliationClient.new(validated: true)
+    checked.run({})
+    assert_equal [[9, HEAD]], checked.processed
+  end
 end
