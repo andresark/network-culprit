@@ -1,0 +1,34 @@
+name: Automatically merge verified Dependabot security fixes and release app patches
+on:
+  workflow_run:
+    workflows: ['Native macOS tests, dependency audit, and release']
+    types: [completed]
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      validation_run_id:
+        description: 'Completed PR validation run to inspect; manual runs never merge or publish'
+        required: true
+permissions:
+  contents: read
+jobs:
+  merge-security-fix-and-release-app-patch:
+    if: github.repository == 'andresark/network-culprit' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      # Always execute protected main's policy; never check out the PR's code
+      # in this privileged job. PR files are fetched only as bounded text data.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Merge advisory fixes only after all checks, then dispatch app releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ruby scripts/automatically-maintain-dependabot-security-updates.rb

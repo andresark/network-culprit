@@ -51,8 +51,9 @@ extension NetworkIncidentNotice {
 }
 
 @MainActor @Observable final class NetworkIncidentNotifications: NSObject, UNUserNotificationCenterDelegate {
-    var preferences = NetworkIncidentNotificationPreferences.load() {
+    var preferences: NetworkIncidentNotificationPreferences {
         didSet {
+            guard !isDemonstration else { return }
             preferences.save()
             if !preferences.isEnabled { state = PersistedNetworkIncidentState(); persistState() }
         }
@@ -61,14 +62,16 @@ extension NetworkIncidentNotice {
     private(set) var errorMessage: String?
     var dashboardRequested = false
     private(set) var state = PersistedNetworkIncidentState()
-    private let center = UNUserNotificationCenter.current()
+    @ObservationIgnored private lazy var center = UNUserNotificationCenter.current()
     private let stateURL: URL
     private var isSubmitting = false
+    private let isDemonstration: Bool
 
     var canDeliver: Bool { authorizationStatus == .authorized || authorizationStatus == .provisional }
     var followUpDelay: TimeInterval? { preferences.isEnabled && canDeliver ? state.tracker.followUpDelay : nil }
     var statusDescription: String {
-        switch authorizationStatus {
+        if isDemonstration { return "Demo mode — no notifications are requested or delivered" }
+        return switch authorizationStatus {
         case .authorized, .provisional: preferences.isEnabled ? "Enabled — sustained issues and confirmed recoveries" : "Off — macOS notification permission is available"
         case .denied: "Blocked by macOS — allow Network Culprit in System Settings → Notifications"
         case .notDetermined: "macOS notification permission has not been requested"
@@ -76,9 +79,12 @@ extension NetworkIncidentNotice {
         }
     }
 
-    init(dataDirectory: URL) {
+    init(dataDirectory: URL, demonstration: Bool = false) {
+        isDemonstration = demonstration
+        preferences = demonstration ? NetworkIncidentNotificationPreferences() : .load()
         stateURL = dataDirectory.appending(path: "Network Incident Notification State.json")
         super.init()
+        guard !demonstration else { return }
         if let data = try? Data(contentsOf: stateURL), let saved = try? JSONDecoder().decode(PersistedNetworkIncidentState.self, from: data) {
             state = saved
             if saved.tracker.lastObservation.map({ $0 > Date().addingTimeInterval(300) }) == true { state = PersistedNetworkIncidentState() }
@@ -89,9 +95,10 @@ extension NetworkIncidentNotice {
         Task { await refreshAuthorization() }
     }
 
-    func refreshAuthorization() async { authorizationStatus = await center.notificationSettings().authorizationStatus }
+    func refreshAuthorization() async { if !isDemonstration { authorizationStatus = await center.notificationSettings().authorizationStatus } }
 
     func setEnabled(_ enabled: Bool) async {
+        guard !isDemonstration else { return }
         errorMessage = nil
         if enabled {
             do {
@@ -144,6 +151,7 @@ extension NetworkIncidentNotice {
     }
 
     func sendTestNotification() async {
+        guard !isDemonstration else { return }
         await refreshAuthorization()
         guard canDeliver else { errorMessage = "Allow Network Culprit notifications in macOS first."; return }
         let content = UNMutableNotificationContent()
@@ -156,6 +164,7 @@ extension NetworkIncidentNotice {
     }
 
     func openSystemSettings() {
+        guard !isDemonstration else { return }
         if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
     }
 
