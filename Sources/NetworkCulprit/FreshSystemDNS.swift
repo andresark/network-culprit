@@ -17,29 +17,30 @@ enum FreshSystemDNS {
                          health: .unavailable, detail: "The test domain must leave room for a unique query label.")
         }
         return await withCheckedContinuation { continuation in
-            FreshSystemDNSOperation(name: name, continuation: continuation).start()
+            FreshSystemDNSOperation(domain: domain, name: name, continuation: continuation).start()
         }
     }
 
-    static func response(error: DNSServiceErrorType, cached: Bool, milliseconds: Double, name: String) -> Probe {
+    static func response(error: DNSServiceErrorType, cached: Bool, milliseconds: Double, domain: String, name: String) -> Probe {
         let answered = error == kDNSServiceErr_NoError || error == kDNSServiceErr_NoSuchRecord
-        return Probe(key: "dns.system.fresh", layer: .dns, name: "Fresh system DNS response", target: name,
+        return Probe(key: "dns.system.fresh", layer: .dns, name: "Fresh system DNS response", target: domain,
                      health: answered ? (cached ? .warning : .good) : .failed,
                      milliseconds: answered ? milliseconds : nil,
                      detail: answered ? (cached ? "macOS returned a cached response; live DNS was not verified." : "A unique query received \(error == kDNSServiceErr_NoSuchRecord ? "a negative DNS answer (expected for a random name)" : "a DNS answer") through the macOS resolver.") : (error == kDNSServiceErr_Timeout ? "A unique query received no usable system DNS response within 6 seconds." : "The macOS resolver could not complete a unique query (DNS service error \(error))."),
-                     evidence: "Native DNSServiceQueryRecord · error \(error)\(error == kDNSServiceErr_PolicyDenied ? " (policy denied)" : "") · answered from cache: \(cached). A unique child of the configured test domain tests the system resolver, including VPN/encrypted DNS routing. It does not bypass caches at upstream resolvers or prove every hostname resolves.")
+                     evidence: "Unique query: \(name)\nNative DNSServiceQueryRecord · error \(error)\(error == kDNSServiceErr_PolicyDenied ? " (policy denied)" : "") · answered from cache: \(cached). A unique child of the configured test domain tests the system resolver, including VPN/encrypted DNS routing. It does not bypass caches at upstream resolvers or prove every hostname resolves.")
     }
 }
 
 private final class FreshSystemDNSOperation: @unchecked Sendable {
     private let queue = DispatchQueue(label: "local.NetworkCulprit.fresh-system-dns-check")
     private let name: String
+    private let domain: String
     private var reference: DNSServiceRef?
     private var continuation: CheckedContinuation<Probe, Never>?
     private var started = DispatchTime.now()
 
-    init(name: String, continuation: CheckedContinuation<Probe, Never>) {
-        self.name = name; self.continuation = continuation
+    init(domain: String, name: String, continuation: CheckedContinuation<Probe, Never>) {
+        self.domain = domain; self.name = name; self.continuation = continuation
     }
 
     func start() {
@@ -66,6 +67,6 @@ private final class FreshSystemDNSOperation: @unchecked Sendable {
         self.continuation = nil
         if let reference { DNSServiceRefDeallocate(reference); self.reference = nil }
         let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
-        continuation.resume(returning: FreshSystemDNS.response(error: error, cached: cached, milliseconds: milliseconds, name: name))
+        continuation.resume(returning: FreshSystemDNS.response(error: error, cached: cached, milliseconds: milliseconds, domain: domain, name: name))
     }
 }

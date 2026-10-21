@@ -226,7 +226,7 @@ struct LatencyHistoryChart: View {
                     return ChartPoint(date: snapshot.date, value: value, series: probe.name)
                 case .dns:
                     guard probe.layer == .dns, probe.key != "dns.nextdns-identity", let value = probe.milliseconds else { return nil }
-                    return ChartPoint(date: snapshot.date, value: value, series: "\(probe.name) · \(probe.target)")
+                    return ChartPoint(date: snapshot.date, value: value, series: probe.historySeriesName)
                 case .bandwidth:
                     guard probe.key == "speed.download" || probe.key == "speed.upload", let value = probe.value else { return nil }
                     return ChartPoint(date: snapshot.date, value: value, series: probe.name)

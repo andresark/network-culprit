@@ -39,6 +39,9 @@ struct Probe: Codable, Identifiable, Sendable {
     var unit: String?
     var detail: String
     var evidence: String = ""
+    // Older fresh-query records used a unique hostname as their target. Group
+    // them with current records without rewriting any saved diagnostic data.
+    var historySeriesName: String { key == "dns.system.fresh" ? name : "\(name) · \(target)" }
     var metric: String {
         if let value { return String(format: "%.0f %@", value, unit ?? "") }
         if let milliseconds { return String(format: "%.1f ms", milliseconds) }
