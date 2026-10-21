@@ -34,7 +34,8 @@ module DependencyVulnerabilityAudit
       queries = [{ 'commit' => revision }]
       version = pin['state']['version']
       if version
-        name = location.sub(/\.git\z/, '').sub(%r{/$}, '')
+        # SwiftURL identifiers are host/path, without https:// or .git.
+        name = uri.host.downcase + uri.path.sub(%r{/$}, '').sub(/\.git\z/, '')
         # GitHub paths are case-insensitive; OSV SwiftURL names use lowercase URLs.
         name = name.downcase if uri.host.downcase == 'github.com'
         queries << { 'package' => { 'ecosystem' => 'SwiftURL', 'name' => name }, 'version' => version }
@@ -112,6 +113,18 @@ module DependencyVulnerabilityAudit
     actions = action_queries(workflows.map { |path| File.read(path) })
     raise 'No action pins found to audit' if actions.empty?
     queries = (swift + actions).uniq
+    # Positive control: exercise SwiftPM URL normalization against a real,
+    # published advisory. This is a query fixture, not an app dependency.
+    control_lock = {
+      'version' => 3, 'pins' => [{ 'kind' => 'remoteSourceControl',
+        'location' => 'https://github.com/ionic-team/capacitor-swift-pm.git',
+        'state' => { 'revision' => '0' * 40, 'version' => '6.1.0' } }]
+    }
+    control = swift_queries({ 'dependencies' => [], 'targets' => [] }, control_lock).select { |query| query.key?('package') }
+    unless findings(control).include?('GHSA-rvm3-566m-v7fv')
+      raise 'OSV positive control failed: known vulnerable Swift version was not detected; review advisory/schema before releasing'
+    end
+    puts 'OSV Swift advisory positive control passed (fixture only; not an app dependency).'
     ids = findings(queries)
     puts "Swift package queries: #{swift.length}; workflow queries: #{actions.length}."
     unless ids.empty?
