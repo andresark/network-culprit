@@ -28,6 +28,7 @@ enum DiagnosticEngine {
             group.addTask { [await directHTTPS(host: "one.one.one.one", ip: "1.1.1.1", key: "internet.https.cloudflare", layer: .internet)] }
             group.addTask { [await directHTTPS(host: "dns.google", ip: "8.8.8.8", key: "internet.https.google", layer: .internet)] }
             group.addTask { [await systemDNS(settings.domain)] }
+            group.addTask { [await FreshSystemDNS.probe(domain: settings.domain)] }
             group.addTask { [await systemWeb(settings.customWebsite)] }
             group.addTask { await nextDNSIdentity() }
             group.addTask { await tailscale(settings: settings) }
@@ -146,9 +147,8 @@ enum DiagnosticEngine {
         var results: [DNSReply] = []
         for _ in 0..<3 { results.append(await DNSWire.measure(server: ip, domain: domain)) }
         let good = results.filter { $0.error == nil && $0.code == 0 && $0.answers > 0 }
-        let answered = results.filter { $0.error == nil }
         let median = good.map(\.milliseconds).sorted().dropFirst(good.count / 2).first
-        let health: Health = good.count == 3 && (median ?? 0) <= 250 ? .good : !answered.isEmpty ? .warning : .failed
+        let health = DNSWire.health(results)
         return Probe(key: "dns.\(role).\(ip)", layer: .dns, name: name, target: ip, health: health,
                      milliseconds: median, detail: "\(good.count)/3 successful A queries for \(domain)\(median == nil ? "" : " · median response")",
                      evidence: results.enumerated().map { "Query \($0.offset + 1): \(String(format: "%.1f", $0.element.milliseconds)) ms; rcode=\($0.element.code); answers=\($0.element.answers); \($0.element.error ?? "response received")" }.joined(separator: "\n"))

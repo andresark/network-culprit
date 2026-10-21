@@ -45,6 +45,10 @@ Click **DNS / NextDNS**, for example, to compare individual resolver results. In
 
 ![The DNS evidence sheet compares failed sample system and NextDNS queries with responding independent and router resolvers.](docs/images/dns-evidence.png)
 
+Opening a dashboard card starts a fresh lightweight check. The sheet shows its measurement time, updates as the check finishes, and offers **Check Again**. Failed rows appear first. History cards keep the original saved result and timestamp.
+
+The DNS card highlights failing checks even when a cached hostname lookup succeeds. A separate **Fresh system DNS response** uses a unique name through macOS's native resolver; an expected negative answer confirms that the resolver responded. This checks live DNS without flushing caches or changing your network settings. Direct UDP resolver failures are shown separately because encrypted DNS or Tailscale can still work through another path.
+
 Each row includes its target, result, timing, and expandable evidence. You can inspect a saved check in exactly the same way later.
 
 **NextDNS users:** enter your own resolver IPs in **Monitoring Settings → DNS / NextDNS & HTTPS**. Leaving this blank skips direct NextDNS upstream queries. An IP response alone does not verify your NextDNS profile.

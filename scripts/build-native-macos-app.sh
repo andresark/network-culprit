@@ -3,7 +3,7 @@ set -euo pipefail
 project_dir=${0:A:h:h}
 output_dir="$project_dir/dist"
 final_app_dir="$output_dir/Network Culprit.app"
-release_version=${NETWORK_CULPRIT_RELEASE_VERSION:-1.4.0}
+release_version=${NETWORK_CULPRIT_RELEASE_VERSION:-1.4.1}
 if [[ ! "$release_version" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
   print -u2 'Release version must be major.minor.patch.'
   exit 1
