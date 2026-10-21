@@ -1,0 +1,103 @@
+name: Native macOS tests, dependency audit, and release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  schedule:
+    - cron: '23 10 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  native-validation:
+    name: Native macOS tests and dependency audit
+    # GitHub's documented free Apple Silicon image for macOS 27 / Xcode 27.
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcrun --sdk macosx --show-sdk-version
+      - name: Resolve and audit dependencies
+        run: |
+          mkdir -p .build
+          swift package resolve
+          swift package dump-package > .build/package-manifest.json
+          if [ -f Package.resolved ]; then git ls-files --error-unmatch Package.resolved; fi
+          git diff --exit-code -- Package.resolved
+          ruby scripts/test-dependency-vulnerability-audit.rb
+          ruby scripts/audit-dependency-vulnerabilities.rb
+      - name: Run native Swift tests
+        run: ./scripts/test-native-network-diagnostics.sh
+      - name: Build and verify public release bundle
+        run: |
+          ./scripts/build-native-macos-app.sh
+          ./scripts/package-public-release.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-network-culprit-release
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  workflow-codeql:
+    name: Workflow security analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: actions
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: /language:actions
+
+  publish-release:
+    name: Publish verified public release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [native-validation, workflow-codeql]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify release commit belongs to main
+        run: git merge-base --is-ancestor HEAD origin/main
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: verified-network-culprit-release
+          path: release-assets
+      - name: Verify checksums and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cd release-assets
+          sha256sum --check SHA256SUMS.txt
+          gh release create "$RELEASE_TAG" ./*.zip SHA256SUMS.txt --verify-tag --title "Network Culprit $RELEASE_TAG" --notes-file "../docs/releases/$RELEASE_TAG.md"

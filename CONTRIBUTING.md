@@ -1,0 +1,45 @@
+# Contributing
+
+Use Swift 6.4 and the macOS 27 SDK. Run `scripts/test-native-network-diagnostics.sh` before submitting a pull request. Tests use synthetic data and temporary storage; they do not disconnect a network, register login items, or deliver issue notifications. Do not commit real diagnostic exports or personal resolver defaults.
+
+## Architecture
+
+| File | Responsibility |
+| --- | --- |
+| `App.swift` | SwiftUI app, menu bar, headless entry points |
+| `DiagnosticStore.swift` | Observation model, background sampling, native path events, retention |
+| `Diagnostics.swift`, `NetworkProbes.swift` | Bounded probes, native DNS, command execution and parsers |
+| `Models.swift` | Codable measurements and evidence-based attribution |
+| `SnapshotDatabase.swift`, `HistoryExport.swift` | System SQLite storage and safe JSON/CSV exports |
+| `NetworkIncidentTracker.swift` | Incident confirmation, recovery, cooldowns, durable state |
+| `NetworkIncidentNotifications.swift` | Native authorization, local notification delivery, durable outbox |
+| `LoginItemController.swift` | Native `SMAppService.mainApp` login registration |
+| `Views.swift`, `HistoryAndSettings.swift` | Dashboard, charts, history, settings |
+| `GlassComponents.swift`, `NetworkMenuBarStatus.swift` | Liquid Glass and accessible status icons |
+
+The `NativeViewState` alias selects SwiftUI's native State property wrapper explicitly because the macOS 27 Command Line Tools can resolve a same-named macro whose plugin is only in full Xcode. The test script similarly locates the Swift Testing plugin when required. SQLite avoids a SwiftData macro build dependency.
+
+Subprocesses have bounded output and timeouts; stdout and stderr stay separate. Tailscale commands explicitly set `TAILSCALE_BE_CLI=1`. Unknown `netcheck` JSON is inconclusive rather than reported healthy. Keep these properties when changing probes.
+
+## Dependency audit
+
+CI uses the runner's Ruby standard library for maintenance tooling, not as an app runtime. To run the audit locally:
+
+```sh
+mkdir -p .build
+swift package resolve
+swift package dump-package > .build/package-manifest.json
+ruby scripts/test-dependency-vulnerability-audit.rb
+ruby scripts/audit-dependency-vulnerabilities.rb
+```
+
+Commit `Package.resolved` when adding remote packages. All direct and transitive remote source-control packages need pinned revisions. Unsupported package sources fail the audit and require a reviewed extension. The audit's regression tests simulate findings, pagination, missing locks, and failed requests without querying real user network data.
+
+## Releasing
+
+1. Update the bundle version/build in `scripts/build-native-macos-app.sh` and add `docs/releases/vVERSION.md`.
+2. Merge a reviewed PR after the required checks pass.
+3. Tag that main-branch commit `vVERSION` and push the tag. The tag must match the bundle version.
+4. The workflow repeats tests/auditing, builds an Apple Silicon bundle, checks it for local paths, and publishes its ZIP and SHA-256 file only after all jobs succeed.
+
+Use the release's workflow run to inspect its provenance. The release job checks that the tagged commit belongs to main. It does not overwrite an existing release. Repository tag rules restrict release tags to maintainers. Do not upload a development bundle or a ZIP containing local history. Publishing an ad hoc signed build does not provide notarization.
